@@ -17,6 +17,19 @@ from utils import (
 )
 
 
+def _validate_1d_array(array: np.ndarray, name: str) -> np.ndarray:
+    array = np.asarray(array, dtype=float)
+    if array.ndim != 1:
+        raise ValueError(f'{name} 必须是一维数组')
+    return array
+
+
+def _validate_positive_int(value: int, name: str) -> int:
+    if not isinstance(value, int) or value < 1:
+        raise ValueError(f'{name} 必须为正整数')
+    return value
+
+
 def _build_toeplitz_matrix(channel: np.ndarray, num_taps: int) -> np.ndarray:
     """构造 FIR 卷积矩阵，使 A @ taps 表示 channel 与 taps 的线性卷积。"""
     conv_len = len(channel) + num_taps - 1
@@ -45,11 +58,8 @@ def estimate_zf_equalizer(channel: np.ndarray, num_taps: int) -> np.ndarray:
         2. d 为中心位置为 1 的冲激响应。
         3. 使用 np.linalg.lstsq 求最小二乘解。
     """
-    channel = np.asarray(channel, dtype=float)
-    if channel.ndim != 1 or len(channel) == 0:
-        raise ValueError('channel 必须是一维非空数组')
-    if num_taps < 1:
-        raise ValueError('num_taps 必须为正整数')
+    channel = _validate_1d_array(channel, 'channel')
+    _validate_positive_int(num_taps, 'num_taps')
 
     # 构造卷积矩阵 A 并生成目标冲激响应 d
     A = _build_toeplitz_matrix(channel, num_taps)
@@ -74,18 +84,16 @@ def apply_fir_filter(signal: np.ndarray, taps: np.ndarray) -> np.ndarray:
     返回:
         filtered: 与 signal 等长的滤波输出。
     """
-    signal = np.asarray(signal, dtype=float)
-    taps = np.asarray(taps, dtype=float)
-    if signal.ndim != 1 or taps.ndim != 1:
-        raise ValueError('signal 和 taps 必须是一维数组')
+    signal = _validate_1d_array(signal, 'signal')
+    taps = _validate_1d_array(taps, 'taps')
 
-    # 使用 np.convolve 进行卷积
-    filtered = np.convolve(signal, taps, mode='full')
-    
-    # 截取前 len(signal) 个样本
-    filtered = filtered[:len(signal)]
-    
+    # 使用 np.convolve 进行卷积并截取与输入等长的输出
+    filtered = np.convolve(signal, taps, mode='full')[: len(signal)]
     return filtered
+
+
+def _build_lms_input_vector(rx_train: np.ndarray, n: int, num_taps: int) -> np.ndarray:
+    return rx_train[n - num_taps + 1:n + 1][::-1]
 
 
 def lms_equalizer(rx_train: np.ndarray, tx_train: np.ndarray, num_taps: int, step_size: float = 0.01) -> Tuple[np.ndarray, np.ndarray]:
@@ -108,43 +116,35 @@ def lms_equalizer(rx_train: np.ndarray, tx_train: np.ndarray, num_taps: int, ste
         3. e[n] = d[n] - y[n]
         4. w = w + μ e[n] x[n]
     """
-    rx_train = np.asarray(rx_train, dtype=float)
-    tx_train = np.asarray(tx_train, dtype=float)
+    rx_train = _validate_1d_array(rx_train, 'rx_train')
+    tx_train = _validate_1d_array(tx_train, 'tx_train')
     if len(rx_train) != len(tx_train):
         raise ValueError('rx_train 和 tx_train 长度必须一致')
-    if num_taps < 1:
-        raise ValueError('num_taps 必须为正整数')
+    _validate_positive_int(num_taps, 'num_taps')
+    if len(rx_train) < num_taps:
+        raise ValueError('训练序列长度必须大于等于 num_taps')
+    if step_size <= 0:
+        raise ValueError('step_size 必须为正数')
 
     # 初始化 taps，中心抽头为 1，其余为 0
-    taps = np.zeros(num_taps)
+    taps = np.zeros(num_taps, dtype=float)
     center_pos = (num_taps - 1) // 2
     taps[center_pos] = 1.0
-    
+
     errors = []
-    
+
     # 从第 num_taps - 1 个样本开始迭代
     for n in range(num_taps - 1, len(rx_train)):
-        # 构造当前输入向量 x，长度为 num_taps
-        # x 为最新的 num_taps 个接收样本（从后向前排列）
-        x = rx_train[n - num_taps + 1:n + 1][::-1]
-        
-        # 计算输出 y = taps @ x
+        x = _build_lms_input_vector(rx_train, n, num_taps)
         y = taps @ x
-        
-        # 计算误差 e = d - y，d 来自 tx_train
         e = tx_train[n] - y
-        
-        # 根据 LMS 公式更新：taps = taps + step_size * e * x
         taps = taps + step_size * e * x
-        
-        # 保存每次迭代的误差
         errors.append(e)
-    
-    errors = np.array(errors)
-    return taps, errors
+
+    return taps, np.asarray(errors, dtype=float)
 
 
-def run_equalization_demo():
+def run_equalization_demo() -> None:
     """运行 Part 2 演示并生成均衡效果图。"""
     print('=' * 60)
     print('Part 2：信道均衡实验')

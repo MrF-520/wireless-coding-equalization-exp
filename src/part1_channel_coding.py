@@ -6,6 +6,7 @@ Part 1：信道编码实验
 """
 
 import numpy as np
+from typing import Optional, Tuple
 from utils import (
     binary_symmetric_channel,
     calculate_ber,
@@ -26,6 +27,36 @@ HAMMING_H = np.array([
     [0, 1, 1, 1, 0, 0, 1],
 ], dtype=int)
 
+CONVOLUTIONAL_GENERATORS = (
+    (1, 1, 1),
+    (1, 0, 1),
+)
+
+
+def _validate_binary_array(bits: np.ndarray, name: str) -> np.ndarray:
+    bits = np.asarray(bits, dtype=int)
+    if bits.ndim != 1:
+        raise ValueError(f'{name} 必须是一维数组')
+    if not np.all((bits == 0) | (bits == 1)):
+        raise ValueError(f'{name} 只能包含 0 或 1')
+    return bits
+
+
+def _syndrome_to_error_position(syndrome: np.ndarray) -> Optional[int]:
+    for bit_pos in range(7):
+        if np.array_equal(syndrome, HAMMING_H[:, bit_pos]):
+            return bit_pos
+    return None
+
+
+def _convolutional_output_bits(input_bit: int, state: int) -> Tuple[int, int, int]:
+    register = (input_bit, (state >> 1) & 1, state & 1)
+    g1, g2 = CONVOLUTIONAL_GENERATORS
+    out1 = (register[0] * g1[0] + register[1] * g1[1] + register[2] * g1[2]) % 2
+    out2 = (register[0] * g2[0] + register[1] * g2[1] + register[2] * g2[2]) % 2
+    next_state = ((state << 1) | input_bit) & 0x3
+    return out1, out2, next_state
+
 
 def hamming74_encode(bits: np.ndarray) -> np.ndarray:
     """
@@ -40,13 +71,9 @@ def hamming74_encode(bits: np.ndarray) -> np.ndarray:
     要求:
         使用课件中的生成矩阵 G，按 GF(2) 进行矩阵乘法。
     """
-    bits = np.asarray(bits, dtype=int)
-    if bits.ndim != 1:
-        raise ValueError('bits 必须是一维数组')
+    bits = _validate_binary_array(bits, 'bits')
     if len(bits) % 4 != 0:
         raise ValueError('Hamming(7,4) 要求输入长度为 4 的倍数')
-    if not np.all((bits == 0) | (bits == 1)):
-        raise ValueError('bits 只能包含 0 或 1')
 
     # 将 bits reshape 为 (-1, 4)
     blocks = bits.reshape(-1, 4)
@@ -112,15 +139,10 @@ def hamming74_decode(received: np.ndarray) -> np.ndarray:
     
     # 对每个码字进行纠错
     for i, syndrome in enumerate(syndromes):
-        # 检查伴随式是否非零
         if np.any(syndrome):
-            # 与 HAMMING_H 的 7 列逐列比较，找到匹配的错误位置
-            # H 的形状是 (3, 7)，需要比较 syndrome 与 H.T 的每一行
-            for bit_pos in range(7):
-                if np.array_equal(syndrome, HAMMING_H[:, bit_pos]):
-                    # 找到错误位置，翻转对应比特
-                    codewords[i, bit_pos] = 1 - codewords[i, bit_pos]
-                    break
+            bit_pos = _syndrome_to_error_position(syndrome)
+            if bit_pos is not None:
+                codewords[i, bit_pos] = 1 - codewords[i, bit_pos]
     
     # 取每个码字前 4 位作为信息比特，flatten 返回
     decoded_bits = codewords[:, :4].flatten()
@@ -134,38 +156,17 @@ def convolutional_encode(bits: np.ndarray) -> np.ndarray:
 
     默认在末尾添加 2 个 0 作为尾比特，使状态回到全零。
     """
-    bits = np.asarray(bits, dtype=int)
-    if not np.all((bits == 0) | (bits == 1)):
-        raise ValueError('bits 只能包含 0 或 1')
+    bits = _validate_binary_array(bits, 'bits')
 
-    # 生成多项式 g1=111 (二进制), g2=101 (二进制)
-    # 约束长度为 3，所以需要 2 比特的状态寄存器
-    g1 = [1, 1, 1]  # 对应八进制 7
-    g2 = [1, 0, 1]  # 对应八进制 5
-    
-    # 添加 2 个 0 作为尾比特
     bits_with_tail = np.concatenate([bits, np.zeros(2, dtype=int)])
-    
     encoded = []
     state = 0  # 初始状态为 0
-    
-    # 对每个输入比特进行编码
+
     for bit in bits_with_tail:
-        # 构造输入向量：[输入比特, 状态的高位, 状态的低位]
-        # 状态的高位是上一步的输入，低位是上上一步的输入
-        register = [int(bit), (state >> 1) & 1, state & 1]
-        
-        # 计算输出比特
-        out1 = (register[0] * g1[0] + register[1] * g1[1] + register[2] * g1[2]) % 2
-        out2 = (register[0] * g2[0] + register[1] * g2[1] + register[2] * g2[2]) % 2
-        
+        out1, out2, state = _convolutional_output_bits(int(bit), state)
         encoded.append(out1)
         encoded.append(out2)
-        
-        # 更新状态：状态 = 前两个输入比特
-        state = (state << 1) | int(bit)
-        state = state & 0x3  # 保留低 2 位
-    
+
     return np.array(encoded, dtype=int)
 
 
@@ -177,76 +178,49 @@ def viterbi_decode_hard(received_bits: np.ndarray) -> np.ndarray:
     if len(received_bits) % 2 != 0:
         raise ValueError('卷积码接收序列长度必须是 2 的倍数')
 
-    # 生成多项式
-    g1 = [1, 1, 1]  # 八进制 7
-    g2 = [1, 0, 1]  # 八进制 5
-    
     num_states = 4  # 2^2 个状态
     num_symbols = len(received_bits) // 2
-    
-    # 初始化路径度量和存活路径
+
     path_metrics = np.full(num_states, np.inf)
-    path_metrics[0] = 0  # 初始状态为 0
-    
-    # 记录前驱状态和输入比特
+    path_metrics[0] = 0.0
+
     predecessors = np.zeros((num_symbols, num_states), dtype=int)
     input_bits_seq = np.zeros((num_symbols, num_states), dtype=int)
-    
-    # Viterbi 前向过程
+
     for symbol_idx in range(num_symbols):
         received = received_bits[2 * symbol_idx:2 * symbol_idx + 2]
         new_path_metrics = np.full(num_states, np.inf)
-        
-        # 枚举所有可能的前驱状态
+
         for curr_state in range(num_states):
             if path_metrics[curr_state] == np.inf:
                 continue
-            
-            # 尝试两个可能的输入比特
+
             for input_bit in [0, 1]:
-                # 构造寄存器：[输入比特, 当前状态高位, 当前状态低位]
-                register = [input_bit, (curr_state >> 1) & 1, curr_state & 1]
-                
-                # 计算输出比特
-                out1 = (register[0] * g1[0] + register[1] * g1[1] + register[2] * g1[2]) % 2
-                out2 = (register[0] * g2[0] + register[1] * g2[1] + register[2] * g2[2]) % 2
-                
-                # 计算汉明距离（硬判决度量）
+                out1, out2, next_state = _convolutional_output_bits(input_bit, curr_state)
                 hamming_dist = abs(out1 - received[0]) + abs(out2 - received[1])
-                
-                # 计算新路径度量
                 new_metric = path_metrics[curr_state] + hamming_dist
-                
-                # 计算下一状态
-                next_state = ((curr_state << 1) | input_bit) & 0x3
-                
-                # 更新最优路径
+
                 if new_metric < new_path_metrics[next_state]:
                     new_path_metrics[next_state] = new_metric
                     predecessors[symbol_idx, next_state] = curr_state
                     input_bits_seq[symbol_idx, next_state] = input_bit
-        
+
         path_metrics = new_path_metrics
-    
-    # Viterbi 回溯过程
-    # 从最优终状态开始回溯
+
     final_state = np.argmin(path_metrics)
-    
     decoded = []
     current_state = final_state
-    
+
     for symbol_idx in range(num_symbols - 1, -1, -1):
         input_bit = input_bits_seq[symbol_idx, current_state]
         decoded.append(input_bit)
         current_state = predecessors[symbol_idx, current_state]
-    
+
     decoded.reverse()
-    
-    # 移除尾比特（最后 2 个）
     return np.array(decoded[:-2], dtype=int)
 
 
-def run_coding_demo():
+def run_coding_demo() -> None:
     """运行 Part 1 演示并生成 BER 曲线。"""
     print('=' * 60)
     print('Part 1：信道编码实验')
