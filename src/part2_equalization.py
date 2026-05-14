@@ -5,6 +5,7 @@ Part 2：信道均衡实验
 """
 
 import numpy as np
+from typing import Tuple
 from utils import (
     bpsk_demodulate,
     bpsk_modulate,
@@ -16,7 +17,19 @@ from utils import (
 )
 
 
-def estimate_zf_equalizer(channel, num_taps):
+def _build_toeplitz_matrix(channel: np.ndarray, num_taps: int) -> np.ndarray:
+    """构造 FIR 卷积矩阵，使 A @ taps 表示 channel 与 taps 的线性卷积。"""
+    conv_len = len(channel) + num_taps - 1
+    A = np.zeros((conv_len, num_taps), dtype=float)
+    for row in range(conv_len):
+        for col in range(num_taps):
+            idx = row - col
+            if 0 <= idx < len(channel):
+                A[row, col] = channel[idx]
+    return A
+
+
+def estimate_zf_equalizer(channel: np.ndarray, num_taps: int) -> np.ndarray:
     """
     估计迫零（Zero-Forcing, ZF）FIR 均衡器。
 
@@ -38,28 +51,19 @@ def estimate_zf_equalizer(channel, num_taps):
     if num_taps < 1:
         raise ValueError('num_taps 必须为正整数')
 
-    # 计算卷积结果的长度
-    conv_len = len(channel) + num_taps - 1
-    
-    # 构造卷积矩阵 A (Toeplitz 矩阵)
-    A = np.zeros((conv_len, num_taps))
-    for i in range(conv_len):
-        for j in range(num_taps):
-            if i - j < len(channel) and i - j >= 0:
-                A[i, j] = channel[i - j]
-    
-    # 构造目标冲激响应 d，在中心位置放置 1
-    d = np.zeros(conv_len)
+    # 构造卷积矩阵 A 并生成目标冲激响应 d
+    A = _build_toeplitz_matrix(channel, num_taps)
+    conv_len = A.shape[0]
+    d = np.zeros(conv_len, dtype=float)
     center_pos = (num_taps - 1) // 2
     d[center_pos] = 1.0
-    
+
     # 使用最小二乘法求解
     taps, _, _, _ = np.linalg.lstsq(A, d, rcond=None)
-    
     return taps
 
 
-def apply_fir_filter(signal, taps):
+def apply_fir_filter(signal: np.ndarray, taps: np.ndarray) -> np.ndarray:
     """
     对信号应用 FIR 滤波器，并返回与输入等长的输出。
 
@@ -84,7 +88,7 @@ def apply_fir_filter(signal, taps):
     return filtered
 
 
-def lms_equalizer(rx_train, tx_train, num_taps, step_size=0.01):
+def lms_equalizer(rx_train: np.ndarray, tx_train: np.ndarray, num_taps: int, step_size: float = 0.01) -> Tuple[np.ndarray, np.ndarray]:
     """
     使用训练序列实现 LMS 自适应均衡。
 

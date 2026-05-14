@@ -27,7 +27,7 @@ HAMMING_H = np.array([
 ], dtype=int)
 
 
-def hamming74_encode(bits):
+def hamming74_encode(bits: np.ndarray) -> np.ndarray:
     """
     Hamming(7,4) 系统码编码。
 
@@ -60,7 +60,7 @@ def hamming74_encode(bits):
     return encoded
 
 
-def hamming74_syndrome(codewords):
+def hamming74_syndrome(codewords: np.ndarray) -> np.ndarray:
     """
     计算 Hamming(7,4) 码字的伴随式。
 
@@ -84,7 +84,7 @@ def hamming74_syndrome(codewords):
     return syndromes
 
 
-def hamming74_decode(received):
+def hamming74_decode(received: np.ndarray) -> np.ndarray:
     """
     Hamming(7,4) 单比特纠错译码。
 
@@ -128,7 +128,7 @@ def hamming74_decode(received):
     return decoded_bits
 
 
-def convolutional_encode(bits):
+def convolutional_encode(bits: np.ndarray) -> np.ndarray:
     """
     选做：实现 (2,1,3) 卷积码编码，生成多项式为 g1=111, g2=101。
 
@@ -169,7 +169,7 @@ def convolutional_encode(bits):
     return np.array(encoded, dtype=int)
 
 
-def viterbi_decode_hard(received_bits):
+def viterbi_decode_hard(received_bits: np.ndarray) -> np.ndarray:
     """
     选做：实现 (2,1,3) 卷积码硬判决 Viterbi 译码。
     """
