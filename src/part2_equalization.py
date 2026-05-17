@@ -59,6 +59,8 @@ def estimate_zf_equalizer(channel: np.ndarray, num_taps: int) -> np.ndarray:
         3. 使用 np.linalg.lstsq 求最小二乘解。
     """
     channel = _validate_1d_array(channel, 'channel')
+    if len(channel) == 0:
+        raise ValueError('channel 必须为非空数组')
     _validate_positive_int(num_taps, 'num_taps')
 
     # 构造卷积矩阵 A 并生成目标冲激响应 d

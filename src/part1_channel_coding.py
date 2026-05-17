@@ -278,6 +278,5 @@ def run_coding_demo() -> None:
     except Exception as error:
         print(f'❌ Part 1 运行失败：{error}')
 
-
 if __name__ == '__main__':
     run_coding_demo()
