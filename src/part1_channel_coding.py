@@ -245,7 +245,7 @@ def run_coding_demo() -> None:
         plot_ber_curve(
             error_probabilities,
             {'未编码': uncoded_ber, 'Hamming(7,4)': coded_ber},
-            'Hamming(7,4) 编码前后 BER 对比',
+            'Hamming(7,4) 编码前后BER对比',
             'coding_ber_curve.png',
         )
         print('✅ 已生成 results/coding_ber_curve.png')
@@ -269,7 +269,7 @@ def run_coding_demo() -> None:
         plot_ber_curve(
             error_probabilities,
             {'未编码': uncoded_ber, 'Hamming(7,4)': coded_ber, '卷积码(2,1,3)': conv_ber},
-            '信道编码方案 BER 对比',
+            '信道编码方案BER对比',
             'coding_comparison_ber_curve.png',
         )
         print('✅ 已生成 results/coding_comparison_ber_curve.png')
@@ -277,7 +277,6 @@ def run_coding_demo() -> None:
         print(f'⏸️ 尚未完成核心函数：{error}')
     except Exception as error:
         print(f'❌ Part 1 运行失败：{error}')
-
 
 
 if __name__ == '__main__':
